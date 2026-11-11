@@ -1,0 +1,112 @@
+[
+  {
+    "id": 1,
+    "question": "Which layer does the OpenFlow protocol operate between?",
+    "options": [
+      "A. Application and Transport layers",
+      "B. Control Plane and Data Plane",
+      "C. Network and Data Link layers",
+      "D. Physical and Data Link layers"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 2,
+    "question": "Which transport protocol guarantees ordered and reliable delivery?",
+    "options": [
+      "A. UDP",
+      "B. ICMP",
+      "C. TCP",
+      "D. IGMP"
+    ],
+    "answer": "C"
+  },
+  {
+    "id": 3,
+    "question": "What is the primary function of an SDN Controller?",
+    "options": [
+      "A. Forward packets at line speed",
+      "B. Centralize network control logic and push flow rules",
+      "C. Encrypt physical layer signals",
+      "D. Provide hardware-level switching"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 4,
+    "question": "Which protocol does OpenFlow commonly use for communication between an SDN controller and a switch?",
+    "options": [
+      "A. TCP",
+      "B. ARP",
+      "C. ICMP",
+      "D. DHCP"
+    ],
+    "answer": "A"
+  },
+  {
+    "id": 5,
+    "question": "What is the main purpose of a flow table in an OpenFlow switch?",
+    "options": [
+      "A. Store web pages",
+      "B. Match packets and apply forwarding actions",
+      "C. Assign exam scores",
+      "D. Encrypt all TCP connections"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 6,
+    "question": "Which TCP feature allows multiple students to reliably send answers to the exam server?",
+    "options": [
+      "A. Connection-oriented reliable byte stream",
+      "B. Broadcast-only delivery",
+      "C. No acknowledgements",
+      "D. Connectionless datagrams"
+    ],
+    "answer": "A"
+  },
+  {
+    "id": 7,
+    "question": "What is Mininet primarily used for in SDN experiments?",
+    "options": [
+      "A. Editing PDFs",
+      "B. Simulating a network using virtual hosts, switches, and links",
+      "C. Storing exam passwords",
+      "D. Replacing the Python interpreter"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 8,
+    "question": "What does a TCP three-way handshake establish?",
+    "options": [
+      "A. A route through every switch",
+      "B. A DNS record",
+      "C. A connection between client and server",
+      "D. A new IP address"
+    ],
+    "answer": "C"
+  },
+  {
+    "id": 9,
+    "question": "What does increased round-trip time (RTT) generally indicate during network congestion?",
+    "options": [
+      "A. Lower network delay",
+      "B. Higher communication delay",
+      "C. More correct answers",
+      "D. Fewer TCP connections"
+    ],
+    "answer": "B"
+  },
+  {
+    "id": 10,
+    "question": "How can an SDN controller protect examination traffic when background traffic causes congestion?",
+    "options": [
+      "A. Delete the examination server",
+      "B. Disable all student clients",
+      "C. Apply traffic management rules to limit background flows",
+      "D. Stop sending questions"
+    ],
+    "answer": "C"
+  }
+]
