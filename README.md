@@ -1,170 +1,139 @@
-# Online Examination Network (TCP + SDN)
+# Online Examination Network — TCP + Mininet + Ryu SDN
 
-A multi-client examination system using **TCP sockets** and a Ryu/OpenFlow 1.3 controller. It delivers questions, accepts answers, enforces a server-side timer, calculates scores, records application telemetry, and includes concurrent-load tests. The Mininet topology places the server and student/background hosts behind two switches with a constrained inter-switch link for congestion experiments.
+An educational multi-client exam service using Python TCP sockets and length-prefixed JSON. The Mininet network contains three students (`h1`–`h3`), one background-traffic generator (`hbg`), one exam server (`hsrv`), and two OpenFlow 1.3 switches (`s1`, `s2`). A Ryu controller records exam/background flow statistics and can temporarily filter congestion-inducing background traffic.
 
-## Features
+## Network architecture
 
-- Concurrent TCP clients (one thread per connection) and length-prefixed JSON messages.
-- Registration, question delivery, answer validation/submission, timer enforcement and scoring.
-- Per-request/application events in `results/server_metrics.jsonl`; final results in `results/exam_results.jsonl`.
-- Ryu controller learns MAC addresses, gives TCP flows on port **9999** a higher-priority flow rule, logs exam traffic, and polls OpenFlow port/flow statistics every five seconds.
-- Mininet topology with a 5-Mbit/s inter-switch link and 10-ms delay, plus a concurrent load generator reporting latency percentiles and Jain's fairness index.
-- Unit and local end-to-end integration tests.
+```text
+h1 --\
+h2 --- s1 ===== 2 Mbps / 5 ms ===== s2 --- hsrv (10.0.0.100)
+h3 --/ |                                 TCP exam:9999
+      hbg (10.0.0.50)                     iperf3:5001
+     Ryu remote controller: 127.0.0.1:6633
+```
 
-> Important: OpenFlow priority controls matching/rule selection, not guaranteed bandwidth by itself. For actual queue-based QoS, configure OVS queues/HTB and map flows to queues; this project logs/observes port counters and prioritizes exam-flow rules, and the constrained link enables congestion experiments. Report only results you actually measure.
+## Files
 
-## Requirements
+- `server.py`: threaded TCP server, fixed-duration exams, grading, validation
+- `client.py`: interactive TCP examination client
+- `protocol.py`: 4-byte length framing + JSON
+- `questions.json`: question bank (answers kept on server)
+- `controller.py`: Ryu OpenFlow 1.3 learning + monitoring + congestion mitigation
+- `topology.py`: Mininet two-switch topology, starts exam server
+- `load_test.py`: concurrent synthetic students with measured **request/response RTT**
+- `compare_results.py`: baseline vs adaptive metric table / CSV
+- `tests/test_exam.py`: socket tests for grading, validation, duplicates, timeout
 
-- Python 3.9+ for the socket application (no third-party Python packages required).
-- For SDN experiments: Linux VM/Ubuntu with Mininet, Open vSwitch and a Ryu-compatible Python environment. Ryu and Mininet are not reliably supported as native Windows tools; use a Linux VM/department lab machine.
+## Prerequisites
 
-## Quick start: local socket test (Windows, macOS or Linux)
+Use Ubuntu Linux or a Mininet-compatible Ubuntu VM. Need: Python 3, Mininet, Open vSwitch, `tc`, `iperf3`, Ryu. Do **not** use the zipped `ryu_env` virtual environment copied between machines; create a compatible one on the VM instead. Ryu is an older dependency: install it in a compatible virtual environment, such as the Python 3.10 setup in your original project, and verify `ryu-manager --version`/controller import. Do not install Mininet into a Windows-only Python shell.
+
+Suggested Ubuntu system packages:
+
+```bash
+sudo apt update
+sudo apt install -y mininet openvswitch-switch iperf3 python3-pip
+```
+
+Keep this project in an accessible location e.g. `~/cn_exam_completed`.
+
+## Part A: verify pure TCP application (no Mininet needed)
 
 Terminal 1:
 
 ```bash
-python server.py --host 127.0.0.1 --port 9999 --duration 120
+cd ~/cn_exam_completed
+python3 -m unittest discover -s tests -v
+python3 server.py
 ```
 
-Terminal 2 (repeat in other terminals for concurrent students):
+Terminal 2:
 
 ```bash
-python client.py --host 127.0.0.1 --port 9999 --student-id S001
+cd ~/cn_exam_completed
+python3 client.py  # change SERVER_IP to 127.0.0.1 for this local test
 ```
 
-Run a concurrent test in another terminal:
+For local testing, modify `SERVER_IP` in `client.py` to `127.0.0.1`; for Mininet use `10.0.0.100`.
+
+## Part B: Mininet demo, baseline
+
+Terminal 1, using your working Ryu environment (its own Python):
 
 ```bash
-python load_test.py --host 127.0.0.1 --port 9999 --clients 20 --duration 10
+cd ~/cn_exam_completed
+SDN_MODE=baseline ryu-manager --ofp-tcp-listen-port 6633 controller.py 2>&1 | tee results/controller_baseline.log
 ```
 
-It writes a detailed JSON report to `results/load_test.json`. Server telemetry and scores are appended to the JSONL files in `results/`.
-
-
-## Web UI (student portal + admin dashboard)
-
-A modern browser interface is included in `web/` and connects to the existing TCP exam server through `web_bridge.py`. The bridge uses only Python's standard library; no Flask, Node.js, database, or frontend build step is required. Student registration, question requests, answer submissions, and final scoring all pass through the original length-prefixed TCP protocol. The admin dashboard reads the server's JSONL telemetry/results and the controller's optional SDN telemetry.
-
-### Run locally on Windows
-
-Open **Terminal 1** in this folder and start the original TCP server:
-
-```powershell
-python server.py --host 127.0.0.1 --port 9999 --duration 120
-```
-
-Open **Terminal 2** and start the web bridge:
-
-```powershell
-python web_bridge.py --host 127.0.0.1 --port 8080 --tcp-host 127.0.0.1 --tcp-port 9999
-```
-
-Open `http://127.0.0.1:8080` in a browser. Choose **Student portal** to take the exam or **Admin console** to view server telemetry and results. For a LAN demo, bind the bridge to `0.0.0.0` and use the host machine's LAN IP in the browser; keep the TCP server reachable from the bridge host.
-
-### Run with Mininet + Ryu
-
-When the TCP server is running inside Mininet on `10.0.0.100:9999`, start the web bridge on the machine that can reach that host:
+Terminal 2:
 
 ```bash
-python3 web_bridge.py --host 0.0.0.0 --port 8080 --tcp-host 10.0.0.100 --tcp-port 9999
+cd ~/cn_exam_completed
+sudo mn -c
+sudo python3 topology.py
 ```
 
-The browser uses HTTP to reach the bridge; the bridge opens the original TCP socket connection to the Mininet-hosted examination server. Ryu controller events are appended to `results/controller_metrics.jsonl` and appear in the admin console when the controller is running.
-
-### UI/API notes
-
-- `GET /api/admin` returns derived dashboard data; `GET /api/health` reports bridge configuration.
-- `POST /api/register`, `/api/question`, `/api/answer`, and `/api/finish` are the browser-to-TCP adapter endpoints.
-- Active sessions are reconstructed from registration and session-end telemetry, so they are best-effort after a process restart.
-- This is a classroom/demo interface, not a production exam platform: add TLS, real authentication, CSRF protection, persistent session storage, and stronger access controls before deployment beyond a trusted lab.
-
-## Tests
+At the `mininet>` prompt:
 
 ```bash
-python -m unittest discover -s tests -v
+h1 python3 client.py
+h2 python3 client.py
+h3 python3 client.py
 ```
 
-The integration test launches a short-lived local server on a test port and verifies registration, question delivery, submission and result calculation. It does not require Mininet/Ryu.
+These interactive clients run sequentially in the Mininet CLI. For genuine concurrent exams, use a terminal for each host with `xterm h1 h2 h3` (requires a graphical desktop / X11), or run several load-test threads on `h1`.
 
-## Mininet + Ryu demonstration (Linux)
+Start `iperf3` background load *inside the Mininet CLI*:
 
-1. Install/start Open vSwitch and Mininet in a Linux VM. Ensure `ryu-manager`, `mn`, `ovs-vsctl` and `iperf` are available.
-2. In terminal A, from this folder, start the controller:
-
-   ```bash
-   ryu-manager controller.py
-   ```
-
-   Controller listens on the standard OpenFlow port `6633`.
-3. In terminal B, launch the topology as root:
-
-   ```bash
-   sudo python3 topology.py
-   ```
-
-   Mininet opens its CLI. First verify `pingall` works.
-4. In the Mininet CLI, start the server on the server host:
-
-   ```text
-   hsrv python3 server.py --host 10.0.0.100 --port 9999 --duration 120 > /tmp/exam-server.log 2>&1 &
-   ```
-
-5. Start student clients from Mininet hosts (one command per host/session):
-
-   ```text
-   h1 python3 client.py --host 10.0.0.100 --student-id S001
-   h2 python3 client.py --host 10.0.0.100 --student-id S002
-   ```
-
-   If interactive input is awkward inside the Mininet CLI, run a scripted client/load test from the host namespace or open separate xterms (`xterm h1 h2 hsrv`). Ensure the project folder is accessible in host namespaces; Mininet hosts normally share the filesystem.
-6. Check Ryu logs for `EXAM TCP observed`, `PORT_STATS`, and `FLOW_STATS`. Check `/tmp/exam-server.log` for concurrent client sessions.
-
-## Congestion and comparison plan
-
-The topology constrains the s1-s2 link to 5 Mbit/s and adds 10 ms delay. To create background load, use a second terminal/xterm or Mininet CLI:
-
-```text
-hbg iperf -s -p 5001 > /tmp/iperf-server.log 2>&1 &
-h1 iperf -c 10.0.0.3 -p 5001 -t 60
+```bash
+hsrv iperf3 -s -p 5001 -D
+hbg iperf3 -c 10.0.0.100 -p 5001 -t 30 &
+h1 python3 load_test.py --host 10.0.0.100 --clients 10 --loops 40 --label baseline
 ```
 
-For repeatable experiments, run a fixed number of clients and the same background load for each condition. Suggested conditions:
+The background traffic should saturate the 2 Mbps inter-switch link. Results are written to `results/baseline.json`. Check switch flows from a regular Ubuntu shell:
 
-| Condition | Setup | Record |
-|---|---|---|
-| Baseline | No background iperf traffic | avg/p50/p95 request latency, successful clients, submissions |
-| Congested | Run iperf across shared link | Same metrics + port drop counters |
-| SDN-aware | Controller active, verify exam flow rules/counters | Same metrics + Ryu flow/port logs |
-
-Run `load_test.py` for each condition and save each output with a distinct `--output results/<condition>.json`. Compare the numbers; don't fill in fabricated measurements. Jain fairness is calculated from the number of accepted submissions per client: `(sum(x)^2)/(n*sum(x^2))`, where 1.0 indicates equal counts. With equal client workloads this is a useful indicator, but discuss its limitations.
-
-## Protocol
-
-Each TCP message is a 4-byte network-order unsigned length followed by a UTF-8 JSON object. Client actions: `REGISTER`, `GET_QUESTION`, `SUBMIT_ANSWER`, `FINISH`; `PING` is also supported. This framing avoids relying on TCP packet/message boundaries.
-
-## Project structure
-
-```text
-online_examination_network/
-├── client.py
-├── web_bridge.py
-├── web/
-│   └── index.html
-├── server.py
-├── protocol.py
-├── questions.json
-├── controller.py
-├── topology.py
-├── load_test.py
-├── tests/
-├── results/
-├── run_local.sh
-└── README.md
+```bash
+sudo ovs-ofctl -O OpenFlow13 dump-flows s1
 ```
 
-## Known limitations / next steps
+## Part C: adaptive congestion response
 
-- Demo-grade project: no TLS, persistent database, authentication provider or proctoring. Do not use for real high-stakes exams without security and privacy work.
-- Results are append-only JSONL files; clear/rotate them before a fresh experiment if needed.
-- Controller packet-in learning and flow rules demonstrate SDN integration. Actual QoS bandwidth reservation requires explicit OVS queues and controller queue actions, which depend on the OVS/Mininet environment.
-- Client timestamps are informational and are not trusted for grading; the timer is enforced using the server's monotonic clock.
+Stop the previous Mininet topology (`exit`) and Ryu controller (Ctrl+C). Relaunch Terminal 1 with:
+
+```bash
+cd ~/cn_exam_completed
+SDN_MODE=adaptive BACKGROUND_THRESHOLD_BPS=150000 BACKGROUND_BLOCK_SECONDS=8 ryu-manager --ofp-tcp-listen-port 6633 controller.py 2>&1 | tee results/controller_adaptive.log
+```
+
+Relaunch Mininet (`sudo mn -c; sudo python3 topology.py`), then repeat **the same workload**:
+
+```bash
+hsrv iperf3 -s -p 5001 -D
+hbg iperf3 -c 10.0.0.100 -p 5001 -t 30 &
+h1 python3 load_test.py --host 10.0.0.100 --clients 10 --loops 40 --label adaptive
+```
+
+Watch the Ryu log for `MONITOR` stats and `CONGESTION: temporarily BLOCKED`. The temporary drop is a dynamic OpenFlow rule with `priority=200` and `hard_timeout=8`; the rule automatically expires. You can compare the switch flow table before/after. It blocks *background TCP port 5001*, not exam TCP port 9999.
+
+Compare:
+
+```bash
+python3 compare_results.py results/baseline.json results/adaptive.json
+```
+
+**Important:** sample latency is round-trip time (RTT) for request/response, not one-way delay. Jain's fairness index here compares **completed answer submissions per student**, not equal packet scheduling. Results depend on machine/VM load and experiment timing; repeat at least 3 runs per condition and compare averages. For meaningful comparison, ensure the `iperf3` background flow is active throughout the measured exam load; if test finishes too soon, increase `--loops` to 100 and/or the `iperf3 -t` duration. The adaptive demo is *background-flow filtering*, not a proven queueing QoS guarantee.
+
+## Demo checklist / evidence
+
+1. Show `python3 -m unittest discover -s tests -v` pass.
+2. Show three students can register and complete exams; timed completion and marks.
+3. Show `mininet> pingall` succeeds with the Ryu controller.
+4. Show flow entries priority 100 (exam), 20 (background), temporary 200 drop.
+5. Show `MONITOR` and `CONGESTION` controller logs under background traffic.
+6. Show baseline/adaptive JSON and comparison CSV with actual numbers.
+7. Save terminal screenshots and measured results for the PDF/report and GitHub README.
+
+## Limitations
+
+This is a coursework prototype: no TLS/login credentials, persistent database, reconnectable sessions, or production-grade exam authorization. The congestion-control policy is intentionally simple: threshold-triggered filtering of a known background TCP port. Do not represent it as weighted-fair queueing or guaranteed QoS. The adaptive controller requires a real Mininet/Ryu run to verify flow statistics and packet behavior.

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+ryu_env/
+ryu/
+results/*.json
+results/*.log
+*.log
+.venv/
